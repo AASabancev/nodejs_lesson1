@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "chance": "^1.1.8",
+    "eslint-config-standard": "^16.0.3",
+    "eslint-plugin-import": "^2.25.4",
+    "eslint-plugin-n": "^14.0.0",
+    "eslint-plugin-promise": "^5.2.0",
+    "yargs": "^17.3.1"
+  }
+}
