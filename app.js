@@ -19,12 +19,16 @@ exports.genString = (ext = '') => {
 
 /**
  * создание папки
- * @param dirpath путь к папке
+ * @param dir путь к папке
  */
-exports.createDir = (dirpath) => {
-  if (!fs.existsSync(dirpath)) {
-    fs.mkdirSync(dirpath);
-  }
+exports.createDir = async (dir) => {
+  return new Promise((resolve, reject) => {
+    fs.mkdir(dir, { recursive: true }, (err) => {
+      if (err) reject(err);
+
+      resolve(dir);
+    });
+  });
 };
 
 /**
@@ -32,10 +36,14 @@ exports.createDir = (dirpath) => {
  * @param filepath путь к файлу
  * @param content содержимое файла
  */
-exports.createFile = (filepath, content) => {
-  if (!fs.existsSync(filepath)) {
-    fs.writeFileSync(filepath, content);
-  }
+exports.createFile = async (filepath, content) => {
+  return new Promise((resolve, reject) => {
+    fs.writeFile(filepath, content, 'utf8', (err) => {
+      if (err) reject(err);
+
+      resolve(true);
+    });
+  });
 };
 
 /**
@@ -44,18 +52,21 @@ exports.createFile = (filepath, content) => {
  * @returns {*[]}
  */
 exports.createDirs = async (dir) => {
-  exports.createDir(dir);
   const dirs = [dir];
-  const countDirs = chance.integer({ min: 100, max: 200 });
+  const countDirs = chance.integer({ min: 5, max: 10 });
   for (let i = 0; i < countDirs; i++) {
     const parent = dirs[Math.floor(Math.random() * dirs.length)];
     const randomstring = exports.genString();
     const dirpath = path.normalize(path.join(parent, randomstring));
-    exports.createDir(dirpath);
     dirs.push(dirpath);
   }
-  console.log(`Created ${countDirs} dirs`);
-  return dirs;
+  return new Promise((resolve, reject) => {
+    Promise.all(dirs.map(async dir => { await exports.createDir(dir); }))
+      .then(() => {
+        console.log(`Created ${countDirs} dirs`);
+        resolve(dirs);
+      });
+  });
 };
 
 /**
@@ -63,7 +74,7 @@ exports.createDirs = async (dir) => {
  * @param dirs Путь к папке, где будут созданы файлы
  * @returns {*[]}
  */
-exports.createFiles = (dirs) => {
+exports.createFiles = async (dirs) => {
   const files = [];
   let countFiles = 0;
   dirs.forEach(dir => {
@@ -72,12 +83,17 @@ exports.createFiles = (dirs) => {
     for (let i = 0; i < count; i++) {
       const randomstring = exports.genString('.jpg');
       const filepath = path.normalize(path.join(dir, randomstring));
-      exports.createFile(filepath, '');
       files.push(filepath);
     }
   });
-  console.log(`Created ${countFiles} files`);
-  return files;
+
+  return new Promise((resolve, reject) => {
+    Promise.all(files.map(async file => { await exports.createFile(file, ''); }))
+      .then(() => {
+        console.log(`Created ${countFiles} files`);
+        resolve(files);
+      });
+  });
 };
 
 /**
@@ -88,9 +104,14 @@ exports.createFiles = (dirs) => {
  * Удаление папки
  * @param dir путь к папке
  */
-exports.removeDir = (dir) => {
-  fs.rmdirSync(dir);
-  console.log(`dir ${dir} removed`);
+exports.removeDir = async (dir) => {
+  return new Promise((resolve, reject) => {
+    fs.rmdir(dir, {}, (err) => {
+      if (err) reject(err);
+
+      resolve(dir);
+    });
+  });
 };
 
 /**
@@ -99,22 +120,45 @@ exports.removeDir = (dir) => {
  * @param dirTo Конечная папка
  * @param callbackFile колбек, применяемый к каждому файлу
  */
-exports.sortFiles = (dirFrom, dirTo, callbackFile = null) => {
-  const files = fs.readdirSync(dirFrom);
+exports.sortFiles = async (dirFrom, dirTo, callbackFile = null) => {
+  return new Promise((resolve, reject) => {
+    fs.readdir(dirFrom, {}, (err, files) => {
+      if (err) throw err;
 
-  files.forEach((item) => {
-    const filepath = path.join(dirFrom, item);
-    const state = fs.statSync(filepath);
-    if (state.isDirectory()) {
-      // console.log('DIR: ' + filepath, state.isDirectory());
-      exports.sortFiles(filepath, dirTo, callbackFile);
-      exports.removeDir(filepath);
-    } else {
-      if (callbackFile) {
-        callbackFile(filepath, dirTo);
-        // console.log('File: ' + item);
+      if (!files.length) {
+        exports.removeDir(dirFrom);
+        resolve(true);
       }
-    }
+
+      Promise.all(files.map(async file => { await exports.sortFile(file, dirFrom, dirTo, callbackFile); }))
+        .then(() => {
+          resolve(true);
+        });
+    });
+  });
+};
+
+exports.sortFile = async (item, dirFrom, dirTo, callbackFile = null) => {
+  return new Promise((resolve, reject) => {
+    const filepath = path.join(dirFrom, item);
+    fs.stat(filepath, {}, async (err, state) => {
+      if (err) throw err;
+
+      if (state.isDirectory()) {
+        exports.sortFiles(filepath, dirTo, callbackFile)
+          .then(() => {
+            exports.removeDir(filepath)
+              .then(() => {
+                resolve(true);
+              });
+          });
+      } else {
+        if (callbackFile) {
+          await callbackFile(filepath, dirTo);
+          resolve(true);
+        }
+      }
+    });
   });
 };
 
@@ -124,15 +168,28 @@ exports.sortFiles = (dirFrom, dirTo, callbackFile = null) => {
  * @param dirTo конечный путь
  * @returns {boolean}
  */
-exports.moveFile = (filepath, dirTo) => {
-  if (!fs.existsSync(filepath)) {
-    console.error(`${filepath} does not exists`);
-    return false;
-  }
-  const parsedPath = path.parse(filepath);
-  const newPath = path.join(dirTo, parsedPath.name.substr(0, 1));
-  exports.createDir(dirTo);
-  exports.createDir(newPath);
-  fs.renameSync(filepath, path.join(newPath, parsedPath.base));
-  console.log(`file ${filepath} moved`);
+exports.moveFile = async (filepath, dirTo) => {
+  return new Promise((resolve, reject) => {
+    fs.stat(filepath, {}, (err, state) => {
+      if (err) throw err;
+
+      if (!state.isFile()) {
+        console.error(`${filepath} does not exists`);
+        return false;
+      }
+      const parsedPath = path.parse(filepath);
+      const newPath = path.join(dirTo, parsedPath.name.substr(0, 1));
+      exports.createDir(newPath)
+        .then(() => {
+          fs.rename(filepath, path.join(newPath, parsedPath.base), (err) => {
+            if (err) throw err;
+
+            console.log(`file ${filepath} moved`);
+            resolve(filepath);
+          });
+        }).catch(err => {
+          if (err) throw err;
+        });
+    });
+  });
 };
