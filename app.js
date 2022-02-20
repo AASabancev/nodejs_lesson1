@@ -43,10 +43,10 @@ exports.createFile = (filepath, content) => {
  * @param dir
  * @returns {*[]}
  */
-exports.createDirs = (dir) => {
+exports.createDirs = async (dir) => {
   exports.createDir(dir);
   const dirs = [dir];
-  const countDirs = chance.integer({ min: 10, max: 50 });
+  const countDirs = chance.integer({ min: 100, max: 200 });
   for (let i = 0; i < countDirs; i++) {
     const parent = dirs[Math.floor(Math.random() * dirs.length)];
     const randomstring = exports.genString();
